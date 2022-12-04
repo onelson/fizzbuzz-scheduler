@@ -16,7 +16,7 @@ pub async fn init_schema(db: &Client) -> Result<()> {
         CREATE TABLE IF NOT EXISTS tasks (
             id SERIAL PRIMARY KEY,
             -- Sized for the larger type seen today: `FizzBuzz`.
-            type VARCHAR(6) NOT NULL,
+            type VARCHAR(8) NOT NULL,
             -- Sized for the larger states seen today: `Completed`
             state VARCHAR(9) NOT NULL,
             execution_time TIMESTAMPTZ NOT NULL,
