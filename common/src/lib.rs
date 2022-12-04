@@ -1,8 +1,10 @@
 //! Common code shared by the worker and http service.
 
+use anyhow::bail;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 pub type ID = i32;
 pub type Timestamp = DateTime<Utc>;
@@ -37,6 +39,30 @@ pub enum TaskType {
     FizzBuzz,
 }
 
+impl TaskType {
+    /// How we represent these values in SQL.
+    fn as_sql(&self) -> &str {
+        match self {
+            TaskType::Fizz => "Fizz",
+            TaskType::Buzz => "Buzz",
+            TaskType::FizzBuzz => "FizzBuzz",
+        }
+    }
+}
+
+impl FromStr for TaskType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Fizz" => TaskType::Fizz,
+            "Buzz" => TaskType::Buzz,
+            "FizzBuzz" => TaskType::FizzBuzz,
+            _ => bail!("cannot parse TaskType: {}", s),
+        })
+    }
+}
+
 impl Display for TaskType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -57,6 +83,28 @@ impl Display for TaskType {
 pub enum TaskState {
     Pending,
     Completed,
+}
+
+impl TaskState {
+    /// How we represent these values in SQL.
+    fn as_sql(&self) -> &str {
+        match self {
+            TaskState::Pending => "Pending",
+            TaskState::Completed => "Completed",
+        }
+    }
+}
+
+impl FromStr for TaskState {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Pending" => TaskState::Pending,
+            "Completed" => TaskState::Completed,
+            _ => bail!("cannot parse TaskState: {}", s),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
