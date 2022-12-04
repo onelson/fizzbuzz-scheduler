@@ -1,77 +1,96 @@
 //! HTTP service for creating tasks and checking their status.
 
+use crate::{
+    database::{DbConn, NoTls, Pool, PostgresConnectionManager},
+    errors::HandlerError,
+};
 use anyhow::Context;
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response, Result},
     routing::get,
     Json, Router,
 };
-use errors::HandlerResult;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
 use tracing::{event, Level};
 
+mod database;
 mod errors;
-
-// FIXME: naive to blindly reach for a fresh connection every time.
-//   Better would be to use a connection pooler and supply it to handlers
-//   via shared state.
-fn get_db() -> anyhow::Result<core::storage::Connection> {
-    // FIXME: better to expose config via CLI (with optional env vars).
-    let dsn =
-        std::env::var("DATABASE_URL").with_context(|| "DATABASE_URL is required but unset")?;
-    core::storage::Connection::new(&dsn).with_context(|| "failed to connect to database")
-}
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL is required");
+
+    let manager =
+        PostgresConnectionManager::new_from_stringlike(&db_url, NoTls).expect("db conn manager");
+    let pool = Pool::builder().build(manager).await.expect("db pooler");
+
+    let conn = pool.get().await.expect("init connection");
+    common::storage::init_schema(&conn)
+        .await
+        .with_context(|| "failed to configure database schema")
+        .expect("init schema");
+
+    drop(conn);
+
     let app = Router::new()
         .route("/tasks", get(list_tasks).post(create_task))
-        .route("/tasks/{}", get(read_task).delete(destroy_task));
+        .route("/tasks/:task_id", get(read_task).delete(destroy_task))
+        .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     event!(Level::DEBUG, "listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
-        .unwrap();
+        .expect("server run");
 }
 
 #[derive(Deserialize)]
 struct CreateTaskRequest {
     #[serde(rename = "type")]
-    kind: core::TaskType,
-    execution_time: core::Timestamp,
+    kind: common::TaskType,
+    execution_time: common::Timestamp,
 }
 
-async fn create_task(Json(payload): Json<CreateTaskRequest>) -> HandlerResult {
-    let conn = get_db()?;
-    let task_id = core::storage::create(&conn, payload.kind, payload.execution_time)?;
+async fn create_task(
+    DbConn(conn): DbConn,
+    Json(payload): Json<CreateTaskRequest>,
+) -> Result<Response> {
+    let task_id = common::storage::create(&conn, &payload.kind, &payload.execution_time)
+        .await
+        .map_err(HandlerError::from)?;
     Ok((StatusCode::CREATED, Json(json!({ "id": task_id }))).into_response())
 }
 
-async fn read_task(Path(task_id): Path<core::ID>) -> HandlerResult {
-    let conn = get_db()?;
+async fn read_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Result<Response> {
     // TODO: this handler should 404 if the task is None
-    let task = core::storage::read(&conn, task_id)?;
+    let task = common::storage::read(&conn, task_id)
+        .await
+        .map_err(HandlerError::from)?;
     Ok((StatusCode::OK, Json(task)).into_response())
 }
 
-async fn destroy_task(Path(task_id): Path<core::ID>) -> HandlerResult {
-    let conn = get_db()?;
+async fn destroy_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Result<Response> {
     // TODO: deletions should be idempotent in so much as deleting an already
     //   non-existent task should give a 204, same as a regular deletion.
-    core::storage::destroy(&conn, task_id)?;
+    common::storage::destroy(&conn, task_id)
+        .await
+        .map_err(HandlerError::from)?;
     Ok((StatusCode::NO_CONTENT, ()).into_response())
 }
 
-async fn list_tasks(Query(filters): Query<core::Filters>) -> HandlerResult {
-    let conn = get_db()?;
-    let tasks = core::storage::list(&conn, filters)?;
-    Ok((StatusCode::OK, Json(json!({ "results": tasks }))).into_response())
+async fn list_tasks(
+    DbConn(conn): DbConn,
+    Query(filters): Query<common::Filters>,
+) -> Result<Response> {
+    let tasks = common::storage::list(&conn, filters)
+        .await
+        .map_err(HandlerError::from)?;
+    Ok(Json(json!({ "results": tasks })).into_response())
 }

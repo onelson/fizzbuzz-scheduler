@@ -25,7 +25,3 @@ where
         Self(err.into())
     }
 }
-
-/// Handlers should use this as their return type to allow `anyhow::Error` to
-/// convert to a response via `?`.
-pub type HandlerResult = Result<Response, HandlerError>;
