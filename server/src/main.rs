@@ -51,6 +51,8 @@ async fn main() {
         .expect("server run");
 }
 
+type Resp = Result<Response, HandlerError>;
+
 #[derive(Deserialize)]
 struct CreateTaskRequest {
     #[serde(rename = "type")]
@@ -58,39 +60,27 @@ struct CreateTaskRequest {
     execution_time: common::Timestamp,
 }
 
-async fn create_task(
-    DbConn(conn): DbConn,
-    Json(payload): Json<CreateTaskRequest>,
-) -> Result<Response> {
-    let task_id = common::storage::create(&conn, &payload.kind, &payload.execution_time)
-        .await
-        .map_err(HandlerError::from)?;
+async fn create_task(DbConn(conn): DbConn, Json(payload): Json<CreateTaskRequest>) -> Resp {
+    let task_id = common::storage::create(&conn, &payload.kind, &payload.execution_time).await?;
     Ok((StatusCode::CREATED, Json(json!({ "id": task_id }))).into_response())
 }
 
-async fn read_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Result<Response> {
-    // TODO: this handler should 404 if the task is None
-    let task = common::storage::read(&conn, task_id)
-        .await
-        .map_err(HandlerError::from)?;
-    Ok((StatusCode::OK, Json(task)).into_response())
+async fn read_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Resp {
+    let task = common::storage::read(&conn, task_id).await?;
+    Ok(match task {
+        None => StatusCode::NOT_FOUND.into_response(),
+        Some(_) => Json(task).into_response(),
+    })
 }
 
-async fn destroy_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Result<Response> {
-    // TODO: deletions should be idempotent in so much as deleting an already
-    //   non-existent task should give a 204, same as a regular deletion.
-    common::storage::destroy(&conn, task_id)
-        .await
-        .map_err(HandlerError::from)?;
-    Ok((StatusCode::NO_CONTENT, ()).into_response())
+async fn destroy_task(DbConn(conn): DbConn, Path(task_id): Path<common::ID>) -> Resp {
+    // Deletions should be idempotent in so much as deleting an already
+    // non-existent task should give a 204, same as a regular deletion.
+    common::storage::destroy(&conn, task_id).await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-async fn list_tasks(
-    DbConn(conn): DbConn,
-    Query(filters): Query<common::Filters>,
-) -> Result<Response> {
-    let tasks = common::storage::list(&conn, filters)
-        .await
-        .map_err(HandlerError::from)?;
+async fn list_tasks(DbConn(conn): DbConn, Query(filters): Query<common::Filters>) -> Resp {
+    let tasks = common::storage::list(&conn, filters).await?;
     Ok(Json(json!({ "results": tasks })).into_response())
 }

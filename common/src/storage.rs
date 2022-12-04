@@ -10,9 +10,8 @@ use tokio_postgres::{Client, Row};
 /// we can settle for using `IF NOT EXISTS` guards and run schema creation
 /// DDL during process startup.
 pub async fn init_schema(db: &Client) -> Result<()> {
-    let _ = db
-        .batch_execute(
-            r#"
+    db.batch_execute(
+        r#"
         CREATE TABLE IF NOT EXISTS tasks (
             id SERIAL PRIMARY KEY,
             -- Sized for the larger type seen today: `FizzBuzz`.
@@ -27,8 +26,8 @@ pub async fn init_schema(db: &Client) -> Result<()> {
         -- Effectively this drives worker task selection.
         CREATE INDEX IF NOT EXISTS queue_idx ON tasks (state, execution_time);
         "#,
-        )
-        .await?;
+    )
+    .await?;
     Ok(())
 }
 
