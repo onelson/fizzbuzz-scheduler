@@ -1,6 +1,7 @@
 use crate::{Filters, Task, TaskState, TaskType, Timestamp, ID};
 use anyhow::Result;
-use tokio_postgres::{Client, Row};
+use tokio_postgres::{Client, Row, Transaction};
+use tracing::{event, Level};
 
 /// (Optionally) create tables needed for the scheduler.
 ///
@@ -103,10 +104,50 @@ pub async fn destroy(db: &Client, id: ID) -> Result<()> {
     Ok(())
 }
 
-pub async fn execute_task(_db: &Client) -> Result<()> {
-    // TODO: Use row locking to select the next pending task, run it, then
-    //   update the status.
-    todo!()
+/// Picks the next `Pending` task which is ready to execute, runs it, then marks
+/// it as `Completed`.
+///
+/// ## Queuing Details
+///
+/// Row-level locking are used to drive task selection such that tasks which are
+/// already locked will be excluded by the query while whatever task ends up
+/// being selected will be locked until the transaction is either committed or
+/// rolled back.
+///
+/// All these details are handled within, and as such the caller should only
+/// need to be responsible for starting a new transaction and handing it off
+/// here.
+pub async fn execute_task(tx: Transaction<'_>) -> Result<()> {
+    let maybe_row = tx
+        .query_opt(
+            r#"
+        SELECT * FROM tasks
+        WHERE execution_time <= now() AND state = $1
+        LIMIT 1
+        -- lock the selected row so no other workers will be able to claim it
+        FOR UPDATE SKIP LOCKED
+        "#,
+            &[&TaskState::Pending.as_sql()],
+        )
+        .await?;
+    match maybe_row {
+        Some(row) => {
+            let task: Task = row.try_into()?;
+            event!(Level::DEBUG, "executing task: id={}", task.id);
+            task.run().await;
+            event!(Level::DEBUG, "marking task completed: id={}", task.id);
+            tx.execute(
+                "UPDATE tasks SET state = $2, updated_at = now() WHERE id = $1",
+                &[&task.id, &TaskState::Completed.as_sql()],
+            )
+            .await?;
+        }
+        None => {
+            event!(Level::DEBUG, "no pending tasks found");
+        }
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 impl TryFrom<Row> for Task {

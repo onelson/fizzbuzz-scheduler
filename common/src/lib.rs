@@ -20,14 +20,13 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn run(&self) {
+    pub async fn run(&self) {
         let sleep_secs = match self.kind {
             TaskType::Fizz => 3,
             TaskType::Buzz => 5,
             TaskType::FizzBuzz => 15,
         };
-
-        std::thread::sleep(std::time::Duration::from_secs(sleep_secs));
+        tokio::time::sleep(std::time::Duration::from_secs(sleep_secs)).await;
         println!("{} {}", self.kind, self.id);
     }
 }
@@ -41,7 +40,7 @@ pub enum TaskType {
 
 impl TaskType {
     /// How we represent these values in SQL.
-    fn as_sql(&self) -> &str {
+    pub fn as_sql(&self) -> &str {
         match self {
             TaskType::Fizz => "Fizz",
             TaskType::Buzz => "Buzz",
@@ -87,7 +86,7 @@ pub enum TaskState {
 
 impl TaskState {
     /// How we represent these values in SQL.
-    fn as_sql(&self) -> &str {
+    pub fn as_sql(&self) -> &str {
         match self {
             TaskState::Pending => "Pending",
             TaskState::Completed => "Completed",
@@ -117,4 +116,5 @@ pub struct Filters {
 pub mod storage;
 
 // Re-exports...
+pub use tokio;
 pub use tokio_postgres;
