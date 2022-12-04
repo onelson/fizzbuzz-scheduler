@@ -16,4 +16,4 @@ features = ["serde"]
 
 [dependencies.tokio-postgres]
 version = "0.7.7"
-fetures = ["with-chrono-0_4"]
+features = ["with-chrono-0_4"]
