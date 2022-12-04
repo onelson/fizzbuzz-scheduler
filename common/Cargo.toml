@@ -1,5 +1,5 @@
 [package]
-name = "core"
+name = "common"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,3 +13,7 @@ serde_json = "1.0"
 [dependencies.chrono]
 version = "0.4.23"
 features = ["serde"]
+
+[dependencies.tokio-postgres]
+version = "0.7.7"
+fetures = ["with-chrono-0_4"]

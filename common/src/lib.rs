@@ -13,8 +13,8 @@ pub struct Task {
     pub kind: TaskType,
     pub execution_time: Timestamp,
     pub state: TaskState,
-    pub created: Timestamp,
-    pub updated: Timestamp,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 impl Task {
@@ -30,7 +30,7 @@ impl Task {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum TaskType {
     Fizz,
     Buzz,
@@ -53,13 +53,13 @@ impl Display for TaskType {
 
 // N.b. we don't really have any fallible tasks, but if we did we could
 // represent that as a state.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum TaskState {
     Pending,
     Completed,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct Filters {
     pub state: Option<TaskState>,
     #[serde(rename = "type")]
@@ -67,3 +67,6 @@ pub struct Filters {
 }
 
 pub mod storage;
+
+// Re-exports...
+pub use tokio_postgres;
