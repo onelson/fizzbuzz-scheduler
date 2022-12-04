@@ -59,9 +59,41 @@ pub async fn read(db: &Client, id: ID) -> Result<Option<Task>> {
     })
 }
 
-pub async fn list(db: &Client, _filters: Filters) -> Result<Vec<Task>> {
-    // FIXME: build WHERE clause for `Filters`
-    let rows = db.query(r#"SELECT * FROM tasks"#, &[]).await?;
+pub async fn list(db: &Client, filters: Filters) -> Result<Vec<Task>> {
+    // Base query, without optional filters
+    let unfiltered = "SELECT * FROM tasks";
+    // XXX: Looked at trying to build a vec of params so I could dynamically
+    // build up the WHERE clause, but ran into type-level issues (being unable
+    // to satisfy `&(dyn ToSql + Sync)` with my `Vec<&str>`.
+    // This sort of thing was trivial with `diesel` but complicated here, it seems.
+    // The most direct route which seems workable is to have a separate query
+    // invocation per combination of filters, but this will not scale well as
+    // new filters are added.
+    // FIXME: look at somehow implementing `ToSql` for `Filters`.
+    let rows = match (filters.kind, filters.state) {
+        (Some(kind), Some(state)) => {
+            db.query(
+                &format!("{} WHERE type = $1 AND state = $2", unfiltered),
+                &[&kind.as_sql(), &state.as_sql()],
+            )
+            .await?
+        }
+        (Some(kind), None) => {
+            db.query(
+                &format!("{} WHERE type = $1", unfiltered),
+                &[&kind.as_sql()],
+            )
+            .await?
+        }
+        (None, Some(state)) => {
+            db.query(
+                &format!("{} WHERE state = $1", unfiltered),
+                &[&state.as_sql()],
+            )
+            .await?
+        }
+        (None, None) => db.query(unfiltered, &[]).await?,
+    };
     rows.into_iter().map(Task::try_from).collect()
 }
 
