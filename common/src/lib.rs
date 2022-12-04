@@ -12,6 +12,7 @@ pub type Timestamp = DateTime<Utc>;
 #[derive(Debug, Serialize)]
 pub struct Task {
     pub id: ID,
+    #[serde(rename = "type")]
     pub kind: TaskType,
     pub execution_time: Timestamp,
     pub state: TaskState,
